@@ -67,6 +67,77 @@ const registerUser = asyncHandler(async (req , res) => {
 });
 
 
+const generateRefreshAccessToken = async (userId) => {
+  try{
+
+    const user = await User.findById(userId);
+    const refreshToken = user.generateRefreshToken()
+    const accessToken = user.generateAccessToken()
+
+    user.refreshToken = refreshToken;
+    await user.save({validateBeforeSave : false})
+
+    return {accessToken, refreshToken};
+
+  }catch(error){
+    throw new ApiError(501, error.message || "Unable to create Tokens")
+  }
+
+}
+
+const loginUser = asyncHandler(async (req, res) => {
 
 
-export {registerUser}
+  const {email, username, password} = req.body;
+
+  if(!email && !username) throw new ApiError(401, "username or email is required");
+
+  const user = await User.findOne({
+    $or : [{username}, {email}]
+  })
+
+  const isPasswordValid = await user.isPasswordCorrect(password);
+
+  
+  if(!isPasswordValid) throw new ApiError(401, "Invalid Password")
+
+  const {accessToken, refreshToken} = await generateRefreshAccessToken(user._id);
+
+
+    const loggedInUser = User.findById(user._id)
+      .select("-password -refreshToken");
+  
+    
+    const options = {
+      httpOnly : true,
+      secure: false
+    }
+
+  
+
+
+  res.status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+      new ApiResponse(
+        200,
+        {
+          user: {
+            _id: loggedInUser._id,
+            name: loggedInUser.name,
+            email: loggedInUser.email,
+          },
+          accessToken,
+          refreshToken,
+        },
+        "User Logged In Successfully!"
+      )
+  );
+
+})
+
+export {
+  registerUser,
+  loginUser
+}
